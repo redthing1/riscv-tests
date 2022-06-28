@@ -142,9 +142,10 @@ finish:
   .global stvec_handler
 stvec_handler:
   # Trapping on tests 13-15 is good news.
-  li t0, 13
+  # Note that since the test didn't complete, TESTNUM is smaller by 1.
+  li t0, 12
   bltu TESTNUM, t0, 1f
-  li t0, 15
+  li t0, 14
   bleu TESTNUM, t0, privileged
 1:
 

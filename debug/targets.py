@@ -143,7 +143,7 @@ class Target:
             self.name = type(self).__name__
         # Default OpenOCD config file to <name>.cfg
         if not self.openocd_config_path:
-            self.openocd_config_path = f"{self.name}.cfg"
+            self.openocd_config_path = "%s.cfg" % self.name
         self.openocd_config_path = os.path.join(self.directory,
                 self.openocd_config_path)
         for i, hart in enumerate(self.harts):
@@ -151,10 +151,10 @@ class Target:
             if not hasattr(hart, 'id'):
                 hart.id = i
             if not hart.name:
-                hart.name = f"{self.name}-{i}"
+                hart.name = "%s-%d" % (self.name, i)
             # Default link script to <name>.lds
             if not hart.link_script_path:
-                hart.link_script_path = f"{self.name}.lds"
+                hart.link_script_path = "%s.lds" % self.name
             hart.link_script_path = os.path.join(self.directory,
                     hart.link_script_path)
 
@@ -169,12 +169,11 @@ class Target:
                 freertos=test.freertos())
 
     def do_compile(self, hart, *sources):
-        binary_name = (
-                self.name + "_" +
-                os.path.basename(os.path.splitext(sources[0])[0]) + "-" +
-                f"{hart.misa:x}")
+        binary_name = "%s_%s-%x" % (
+                self.name,
+                os.path.basename(os.path.splitext(sources[0])[0]),
+                hart.misa)
         if Target.isolate:
-            # pylint: disable-next=consider-using-with
             self.temporary_binary = tempfile.NamedTemporaryFile(
                     prefix=binary_name + "_")
             binary_name = self.temporary_binary.name
@@ -182,12 +181,12 @@ class Target:
 
         args = list(sources) + [
                 "programs/entry.S", "programs/init.c",
-                f"-DNHARTS={len(self.harts)}",
+                "-DNHARTS=%d" % len(self.harts),
                 "-I", "../env",
                 "-T", hart.link_script_path,
                 "-nostartfiles",
                 "-mcmodel=medany",
-                f"-DXLEN={hart.xlen}",
+                "-DXLEN=%d" % hart.xlen,
                 "-o", binary_name]
 
         if hart.extensionSupported('e'):
@@ -195,17 +194,17 @@ class Target:
             args.append("-mabi=ilp32e")
             args.append("-DRV32E")
         else:
-            march = f"rv{hart.xlen}ima"
+            march = "rv%dima" % hart.xlen
             for letter in "fdc":
                 if hart.extensionSupported(letter):
                     march += letter
             if hart.extensionSupported("v") and self.compiler_supports_v:
                 march += "v"
-            args.append(f"-march={march}")
+            args.append("-march=%s" % march)
             if hart.xlen == 32:
                 args.append("-mabi=ilp32")
             else:
-                args.append(f"-mabi=lp{hart.xlen}")
+                args.append("-mabi=lp%d" % hart.xlen)
 
         testlib.compile(args)
         return binary_name
@@ -222,12 +221,11 @@ class Target:
                         r"ISA extension `(\w)'", e.stderr.decode())
                 if m and m.group(1) in "v":
                     extension = m.group(1)
-                    print(f"Disabling extension {extension!r} because the "
-                            "compiler doesn't support it.")
+                    print("Disabling extension %r because the "
+                            "compiler doesn't support it." % extension)
                     self.compiler_supports_v = False
                 else:
                     raise
-        return None
 
 def add_target_options(parser):
     parser.add_argument("target", help=".py file that contains definition for "
@@ -261,18 +259,18 @@ def target(parsed):
         definition = getattr(module, name)
         if isinstance(definition, type) and issubclass(definition, Target):
             found.append(definition)
-    assert len(found) == 1, (f"{parsed.target} does not define exactly one "
-                             "subclass of targets.Target")
+    assert len(found) == 1, "%s does not define exactly one subclass of " \
+            "targets.Target" % parsed.target
 
     t = found[0](parsed.target, parsed)
-    assert t.harts, f"{t.name} doesn't have any harts defined!"
+    assert t.harts, "%s doesn't have any harts defined!" % t.name
     if parsed.xlen > 0:
         for h in t.harts:
             if h.xlen == 0:
                 h.xlen = parsed.xlen
             elif h.xlen != parsed.xlen:
-                raise Exception("The target hart specified an XLEN of "
-                        f"{h.xlen}, but the command line specified an XLEN of "
-                        f"{parsed.xlen}. They must match.")
+                raise Exception("The target hart specified an XLEN of %d, but "\
+                        "the command line specified an XLEN of %d. They must "\
+                        "match." % (h.xlen, parsed.xlen))
 
     return t

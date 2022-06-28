@@ -409,21 +409,6 @@ class MemTestBlock2(MemTestBlock):
     def test(self):
         return self.test_block(2)
 
-class DisconnectTest(GdbTest):
-    def test(self):
-        old_values = self.gdb.info_registers("all", ops=20)
-        self.gdb.disconnect()
-        self.gdb.connect()
-        self.gdb.select_hart(self.hart)
-        new_values = self.gdb.info_registers("all", ops=20)
-
-        regnames = set(old_values.keys()).union(set(new_values.keys()))
-        for regname in regnames:
-            if regname in ("mcycle", "minstret", "instret", "cycle"):
-                continue
-            assertEqual(old_values[regname], new_values[regname],
-                    "Register %s didn't match" % regname)
-
 class InstantHaltTest(GdbTest):
     def test(self):
         """Assert that reset is really resetting what it should."""
@@ -568,9 +553,7 @@ class DebugTurbostep(DebugTest):
         last_pc = None
         advances = 0
         jumps = 0
-        start = time.time()
-        count = 10
-        for _ in range(count):
+        for _ in range(10):
             self.gdb.stepi()
             pc = self.gdb.p("$pc")
             assertNotEqual(last_pc, pc)
@@ -579,8 +562,6 @@ class DebugTurbostep(DebugTest):
             else:
                 jumps += 1
             last_pc = pc
-        end = time.time()
-        print("%.2f seconds/step" % ((end - start) / count))
         # Some basic sanity that we're not running between breakpoints or
         # something.
         assertGreater(jumps, 1)
@@ -834,7 +815,6 @@ class MemorySampleTest(DebugTest):
                 else:
                     end = (timestamp, total_samples)
             else:
-                assertRegex(line, r"^0x[0-f]+: 0x[0-f]+$")
                 address, value = line.split(': ')
                 address = int(address, 16)
                 if address == check_addr:
@@ -952,37 +932,16 @@ class Semihosting(GdbSingleHartTest):
         assertIn("Breakpoint", output)
         assertIn("_exit", output)
         assertEqual(self.gdb.p("status"), expected_result)
-        return output
 
     def test(self):
+        """Sending gdb ^C while the program is running should cause it to
+        halt."""
         temp = tempfile.NamedTemporaryFile(suffix=".data")
 
         self.gdb.b("main:begin")
         self.gdb.c()
         self.gdb.p('filename="%s"' % temp.name, ops=3)
         self.exit()
-
-        contents = open(temp.name, "r").readlines()
-        assertIn("Hello, world!\n", contents)
-
-        # stdout should end up in the OpenOCD log
-        log = open(self.server.logname).read()
-        assertIn("Do re mi fa so la ti do!", log)
-
-class SemihostingFileio(Semihosting):
-    def setup(self):
-        self.gdb.command("monitor arm semihosting_fileio enable")
-        super().setup()
-
-    def test(self):
-        temp = tempfile.NamedTemporaryFile(suffix=".data")
-
-        self.gdb.b("main:begin")
-        self.gdb.c()
-        self.gdb.p('filename="%s"' % temp.name, ops=3)
-        output = self.exit()
-        # stdout should end up in gdb's CLI
-        assertIn("Do re mi fa so la ti do!", output)
 
         contents = open(temp.name, "r").readlines()
         assertIn("Hello, world!\n", contents)
@@ -1485,14 +1444,14 @@ class DownloadTest(GdbTest):
         # TODO: remove the next line so we get a bit more code to download. The
         # line above that allows for more data runs into some error I don't
         # have time to track down right now.
-        #length = min(2**14, max(2**10, self.hart.ram_size - 2048))
+        length = min(2**14, max(2**10, self.hart.ram_size - 2048))
         self.download_c = tempfile.NamedTemporaryFile(prefix="download_",
                 suffix=".c", delete=False)
         self.download_c.write(b"#include <stdint.h>\n")
         self.download_c.write(
                 b"unsigned int crc32a(uint8_t *message, unsigned int size);\n")
-        self.download_c.write(b"const uint32_t length = %d;\n" % length)
-        self.download_c.write(b"const uint8_t d[%d] = {\n" % length)
+        self.download_c.write(b"uint32_t length = %d;\n" % length)
+        self.download_c.write(b"uint8_t d[%d] = {\n" % length)
         self.crc = 0
         assert length % 16 == 0
         for i in range(length // 16):
@@ -1613,13 +1572,14 @@ class CheckMisa(GdbTest):
             misa = self.gdb.p("$misa")
             assertEqual(misa, hart.misa)
 
-class TranslateTest(GdbSingleHartTest):
+class TranslateTest(GdbTest):
     compile_args = ("programs/translate.c", )
 
     def setup(self):
         self.disable_pmp()
 
         self.gdb.load()
+        self.parkOtherHarts()
         self.gdb.b("main")
         output = self.gdb.c()
         assertRegex(output, r"\bmain\b")
@@ -1631,8 +1591,8 @@ class TranslateTest(GdbSingleHartTest):
             satp = mode << 60
         try:
             self.gdb.p("$satp=0x%x" % satp)
-        except testlib.CouldNotFetch as cnf:
-            raise TestNotApplicable from cnf
+        except testlib.CouldNotFetch:
+            raise TestNotApplicable
         readback = self.gdb.p("$satp")
         self.gdb.p("$satp=0")
         if readback != satp:
@@ -1642,7 +1602,6 @@ class TranslateTest(GdbSingleHartTest):
         self.gdb.b("error")
         self.gdb.b("handle_trap")
         self.gdb.b("main:active")
-
         output = self.gdb.c()
         assertRegex(output, r"\bmain\b")
         assertEqual(0xdeadbeef, self.gdb.p("physical[0]"))
@@ -1756,37 +1715,6 @@ class VectorTest(GdbSingleHartTest):
         assertIn("_exit", output)
         assertEqual(self.gdb.p("status"), 0)
 
-class EbreakTest(GdbSingleHartTest):
-    """Test that we work correctly when somebody puts an ebreak directly into
-    their code."""
-    compile_args = ("programs/ebreak.c", )
-
-    def setup(self):
-        self.gdb.load()
-        self.gdb.b("_exit")
-
-    def test(self):
-        # Should hit ebreak in the code.
-        output = self.gdb.c()
-        assertIn("ebreak", output)
-        ebreak_pc = self.gdb.p("$pc")
-
-        # Simple resume, we should hit the same ebreak again.
-        output = self.gdb.c()
-        assertIn("ebreak", output)
-        assertEqual(ebreak_pc, self.gdb.p("$pc"))
-
-        # Test getting past the ebreak by changing the PC.
-        for _ in range(2):
-            self.gdb.p("$pc=$pc+4")
-            output = self.gdb.c()
-            assertIn("ebreak", output)
-            assertEqual(ebreak_pc, self.gdb.p("$pc"))
-
-        self.gdb.p("$pc=$pc+4")
-        output = self.gdb.c()
-        assertIn("_exit", output)
-
 class FreeRtosTest(GdbTest):
     def early_applicable(self):
         return self.target.freertos_binary
@@ -1840,27 +1768,6 @@ class FreeRtosTest(GdbTest):
         for thread in self.gdb.threads():
             self.gdb.thread(thread)
             assertEqual(self.gdb.p("$s11"), values[thread.id] ^ int(thread.id))
-
-class StepThread2Test(GdbTest):
-    # Check that we can do stepi on thread 2 without GDB switching to thread 1.
-    # There was a bug where this could happen, because OpenOCD was mistakenly
-    # omitting a thread ID in its stop reply.  This was addressed in OpenOCD,
-    # but if there is a regression in the future, this test should catch it)
-
-    def early_applicable(self):
-        return len(self.target.harts) > 1
-
-    def test(self):
-        output = self.gdb.command("thread 2")
-        if "Unknown thread" in output:
-            raise TestNotApplicable
-        before = self.gdb.command("thread")
-        self.gdb.stepi()
-        after = self.gdb.command("thread")
-        # make sure that single-step doesn't alter
-        # GDB's conception of the current thread
-        assertEqual(before, after)
-
 
 parsed = None
 def main():
