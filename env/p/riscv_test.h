@@ -235,13 +235,19 @@ reset_vector:                                                           \
 
 #define RVTEST_PASS                                                     \
         fence;                                                          \
-        li a0, 1;                                                        \
+        li a0, 1; \
+        li a1, 0x80000000; \
+        li a2, 0xCF; \
+        sw a2, 0(a1); \
 2:      j 2b
 
 #define TESTNUM gp
 #define RVTEST_FAIL                                                     \
         fence;                                                          \
-        li a0, 0;                                                        \
+        li a0, 0; \
+        li a1, 0x80000000; \
+        li a2, 0xCF; \
+        sw a2, 0(a1); \
 2:      j 2b
 
 //-----------------------------------------------------------------------
