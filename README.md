@@ -1,6 +1,12 @@
 riscv-tests
 ================
 
+## rapid build (requires podman)
+
+```sh
+./redbuild.sh
+```
+
 About
 -----------
 
