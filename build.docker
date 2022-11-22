@@ -1,0 +1,13 @@
+# FROM amd64/debian:bullseye-slim
+FROM redthing1/riscv_gnu_toolchain:2022.03.09
+
+# install dependencies
+RUN apt-get update && apt-get install -y \
+  bash \
+  curl wget xz-utils \
+  gcc make libc6-dev libcurl4 git libxml2 \
+  autoconf automake libtool \
+  && rm -rf /var/lib/apt/lists/* && apt autoremove -y && apt clean
+
+# run bash by default
+CMD ["/bin/bash", "-l"]
