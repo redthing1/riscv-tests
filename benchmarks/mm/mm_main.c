@@ -42,12 +42,12 @@ void thread_entry(int cid, int nc)
 
   asm volatile("fence");
 
-  printf("C%d: reg block %dx%dx%d, cache block %dx%dx%d\n",
-         cid, RBM, RBN, RBK, CBM, CBN, CBK);
-  printf("C%d: %d instructions\n", cid, (int)(instret));
-  printf("C%d: %d cycles\n", cid, (int)(cycles));
-  printf("C%d: %d flops\n", cid, 2*m*n*p);
-  printf("C%d: %d Mflops @ 1 GHz\n", cid, 2000*m*n*p/(cycles));
+  // printf("C%d: reg block %dx%dx%d, cache block %dx%dx%d\n",
+  //        cid, RBM, RBN, RBK, CBM, CBN, CBK);
+  // printf("C%d: %d instructions\n", cid, (int)(instret));
+  // printf("C%d: %d cycles\n", cid, (int)(cycles));
+  // printf("C%d: %d flops\n", cid, 2*m*n*p);
+  // printf("C%d: %d Mflops @ 1 GHz\n", cid, 2000*m*n*p/(cycles));
 
 #if 1
   for (size_t i = 0; i < m; i++)
@@ -60,7 +60,7 @@ void thread_entry(int cid, int nc)
       s *= R;
       if (fabs(c[i*n+j]-s) > fabs(1e-6*s))
       {
-        printf("C%d: c[%lu][%lu] %f != %f\n", cid, i, j, c[i*n+j], s);
+        // printf("C%d: c[%lu][%lu] %f != %f\n", cid, i, j, c[i*n+j], s);
         exit(1);
       }
     }
